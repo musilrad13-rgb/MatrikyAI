@@ -1,7 +1,12 @@
 import base64
+import hashlib
 import io
 import json
+import re
+import ssl
+import urllib.parse
 import urllib.request
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -11,8 +16,14 @@ from PIL import Image
 
 ZAKLAD = Path(__file__).parent
 LOGO = ZAKLAD / "logo.png"
-SOUBOR_HISTORIE = ZAKLAD / "historie_chatu.json"
-MODELY = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash"]
+SLOZKA_UZIVATELU = ZAKLAD / "uzivatele"
+SLOZKA_UZIVATELU.mkdir(exist_ok=True)
+MODELY = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+
+# SSL kontext pro bezpečné i archivní weby se staršími certifikáty (např. Porta fontium)
+SSL_CTX = ssl.create_default_context()
+SSL_CTX.check_hostname = False
+SSL_CTX.verify_mode = ssl.CERT_NONE
 
 st.set_page_config(
     page_title="Lupa na matriky",
@@ -21,7 +32,39 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ---------- TRVALÉ UKLÁDÁNÍ HISTORIE NA DISK ----------
+# ---------- IDENTIFIKACE A PROSTOR UŽIVATELE (BEZPEČNÉ ODDĚLENÍ HISTORIE) ----------
+def ziskej_uzivatelske_info():
+    """
+    Vrátí (je_prihlasen, zobrazovane_jmeno, email, identifikator_souboru).
+    Podporuje Google OAuth přes Streamlit (st.user), nebo režim dočasného hosta.
+    """
+    prihlasen = False
+    jmeno = "Host"
+    email = ""
+    try:
+        user = getattr(st, "user", None)
+        if user and getattr(user, "is_logged_in", False):
+            prihlasen = True
+            email = getattr(user, "email", "") or ""
+            jmeno = getattr(user, "name", None) or (email.split("@")[0] if email else "Uživatel")
+    except Exception:
+        prihlasen = False
+
+    if prihlasen and email:
+        h = hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()[:16]
+        return True, jmeno, email, f"user_{h}"
+
+    if "host_id" not in st.session_state:
+        st.session_state.host_id = uuid.uuid4().hex[:12]
+    return False, "Host", "", f"host_{st.session_state.host_id}"
+
+
+def ziskej_soubor_historie():
+    _, _, _, ident = ziskej_uzivatelske_info()
+    return SLOZKA_UZIVATELU / f"historie_{ident}.json"
+
+
+# ---------- TRVALÉ UKLÁDÁNÍ HISTORIE NA DISK (PRO KAŽDÉHO ZVLÁŠŤ) ----------
 def _to_b64(val):
     if not val:
         return None
@@ -47,6 +90,7 @@ def _from_b64(val):
 
 def uloz_disk_historii():
     try:
+        soubor = ziskej_soubor_historie()
         data = []
         for h in st.session_state.get("historie", []):
             polozka = {
@@ -64,19 +108,20 @@ def uloz_disk_historii():
                     "obrazek_b64": _to_b64(z.get("obrazek"))
                 })
             data.append(polozka)
-        data = data[-20:]  # Uchováme posledních 20 hledání
-        temp_soubor = SOUBOR_HISTORIE.with_suffix(".tmp")
+        data = data[-25:]  # Uchováme posledních 25 hledání daného uživatele
+        temp_soubor = soubor.with_suffix(".tmp")
         temp_soubor.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        temp_soubor.replace(SOUBOR_HISTORIE)
+        temp_soubor.replace(soubor)
     except Exception:
         pass
 
 
 def nacti_disk_historii():
-    if not SOUBOR_HISTORIE.exists():
+    soubor = ziskej_soubor_historie()
+    if not soubor.exists():
         return []
     try:
-        raw = json.loads(SOUBOR_HISTORIE.read_text(encoding="utf-8"))
+        raw = json.loads(soubor.read_text(encoding="utf-8"))
         historie = []
         for h in raw:
             obr = _from_b64(h.get("obrazek_b64"))
@@ -107,30 +152,86 @@ def smaz_celou_historii():
     st.session_state.obrazek = None
     st.session_state.nazev_obrazku = None
     st.session_state.aktivni = None
-    if SOUBOR_HISTORIE.exists():
+    soubor = ziskej_soubor_historie()
+    if soubor.exists():
         try:
-            SOUBOR_HISTORIE.unlink()
+            soubor.unlink()
         except Exception:
             pass
 
 
-# ---------- PAMĚŤ APLIKACE ----------
-VYCHOZI = {"zpravy": [], "obrazek": None, "nazev_obrazku": None, "historie": [], "aktivni": None, "ceka": None,
-           "tmavy": False, "info_skryto": False, "pismo": "Automaticky", "kniha": "Všechny druhy"}
+# ---------- PAMĚŤ APLIKACE A VYHLEDÁVACÍ STAV ----------
+VYCHOZI = {
+    "zpravy": [], "obrazek": None, "nazev_obrazku": None, "historie": [], "aktivni": None, "ceka": None,
+    "tmavy": False, "info_skryto": False, "pismo": "Automaticky", "kniha": "Všechny druhy",
+    "rezim_host": False, "auth_chyba": None, "posledni_nacteny_uid": None
+}
 for k, v in VYCHOZI.items():
     st.session_state.setdefault(k, v)
 
-# Automatické obnovení historie po restartu / rebootu
-if "disk_nacteno" not in st.session_state:
-    st.session_state.disk_nacteno = True
+je_prihlasen, uzivatel_jmeno, uzivatel_email, uid = ziskej_uzivatelske_info()
+
+# PŘIHLAŠOVACÍ BRÁNA (ZABEZPEČENÍ DŮVĚRNÝCH DAT UŽIVATELE)
+if not je_prihlasen and not st.session_state.get("rezim_host"):
+    LOGO_B64 = base64.b64encode(LOGO.read_bytes()).decode() if LOGO.exists() else ""
+    st.markdown('<div style="text-align:center; margin:3vh 0 16px;">', unsafe_allow_html=True)
+    if LOGO_B64:
+        st.markdown(f'<img src="data:image/png;base64,{LOGO_B64}" style="width:76px; height:76px; border-radius:20px; box-shadow:0 4px 18px rgba(0,0,0,0.2); margin-bottom:12px;">', unsafe_allow_html=True)
+    st.markdown("""
+        <h1 style="font-size: clamp(2rem, 4vw, 2.8rem); font-weight:700; margin-bottom:6px;">Lupa na matriky</h1>
+        <p style="color:var(--muted); font-size:1.05rem; max-width:600px; margin:0 auto 20px;">
+            Tvůj soukromý průvodce a čtenář starých rodinných knih a matrik s umělou inteligencí
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_l, col_m, col_r = st.columns([1, 2, 1])
+    with col_m:
+        with st.container(border=True):
+            st.markdown("### 🔐 Zabezpečený rodinný prostor")
+            st.markdown(
+                "Aby byla tvoje hledání, zápisy i rodinné fotografie v bezpečí a měl/a k nim přístup jen ty, "
+                "má každý uživatel svůj oddělený soukromý prostor."
+            )
+
+            if st.session_state.get("auth_chyba"):
+                st.info(st.session_state.auth_chyba)
+
+            if st.button("🔑 Přihlásit se přes Google", type="primary", use_container_width=True, key="btn_login_gate"):
+                try:
+                    st.login("google")
+                except Exception:
+                    st.session_state.auth_chyba = (
+                        "ℹ️ Google přihlášení ještě není nastaveno v konfiguraci aplikace (Streamlit Secrets). "
+                        "Můžeš zatím vstoupit jedním kliknutím jako host níže."
+                    )
+                    st.rerun()
+
+            st.markdown("<div style='text-align:center; color:#888; margin:10px 0;'>— nebo —</div>", unsafe_allow_html=True)
+
+            if st.button("👤 Pokračovat jako host (dočasné hledání)", use_container_width=True, key="btn_host_gate"):
+                st.session_state.rezim_host = True
+                st.rerun()
+
+    st.stop()
+
+# Automatické obnovení historie pro aktuálně aktivního uživatele
+aktivni_uid = uid
+if st.session_state.get("posledni_nacteny_uid") != aktivni_uid:
+    st.session_state.posledni_nacteny_uid = aktivni_uid
     nactena_historie = nacti_disk_historii()
+    st.session_state.historie = nactena_historie
     if nactena_historie:
-        st.session_state.historie = nactena_historie
         posledni = nactena_historie[-1]
         st.session_state.zpravy = posledni["zpravy"]
         st.session_state.obrazek = posledni["obrazek"]
         st.session_state.nazev_obrazku = posledni.get("nazev_obrazku")
         st.session_state.aktivni = len(nactena_historie) - 1
+    else:
+        st.session_state.zpravy = []
+        st.session_state.obrazek = None
+        st.session_state.nazev_obrazku = None
+        st.session_state.aktivni = None
 
 LOGO_B64 = base64.b64encode(LOGO.read_bytes()).decode() if LOGO.exists() else ""
 AVATAR_AI = str(LOGO) if LOGO.exists() else ":material/menu_book:"
@@ -197,32 +298,72 @@ SLOVNICEK = """
 """
 
 NAPOVEDA = """
-1. V políčku dole klikni na **ikonu přílohy** a vyber fotku stránky z matriky.
+1. V políčku dole klikni na **ikonu přílohy** a vyber fotku stránky z matriky nebo zadej odkaz z archivu.
 2. Napiš **příjmení** (např. *Vlasák*) a stiskni **Enter**.
 3. Další jméno na stejné stránce už jen napiš – fotka se pamatuje.
 4. Když odešleš fotku **bez textu**, přepíše se celá stránka.
-5. Karty na úvodu a čipy pod odpovědí spustí další úkoly nad stejnou fotkou.
-
-**Tip:** Je písmo moc malé? Klávesami **Win + Shift + S** vyřízni jen pár řádků.
-Výstřižek se uloží do složky **Obrázky → Snímky obrazovky** a odtud ho přiložíš.
+5. V záložce **„Prolistovat matriku s AI“** můžeš zadat odkaz na knihu z Porta fontium a nechat AI projít vybrané stránky automaticky!
 """
 
+# ---------- BEZPEČNOSTNÍ A SÍŤOVÉ FUNKCE PRO ARCHIVY ----------
+def je_bezpecna_url(url: str) -> bool:
+    cista = url.strip().lower()
+    if not (cista.startswith("http://") or cista.startswith("https://")):
+        return False
+    parsed = urllib.parse.urlparse(cista)
+    hostname = (parsed.hostname or "").lower()
+    if hostname in ("localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254"):
+        return False
+    if hostname.startswith("10.") or hostname.startswith("192.168."):
+        return False
+    return True
 
-# ---------- AKCE TLAČÍTEK ----------
+
 def stahni_obrazek_z_url(url: str):
+    """
+    Univerzální stažení obrázku – podporuje jak přímé URL obrázků,
+    tak prohlížecí odkazy z Porta Fontium (SOA Plzeň).
+    """
+    cista = url.strip()
+    if not je_bezpecna_url(cista):
+        return None, "Odkaz musí začínat http:// nebo https:// a nesmí mířit na lokální síť."
+
+    # 1. Podpora pro Porta Fontium (SOA Plzeň)
+    if "portafontium.eu/iipimage/" in cista:
+        try:
+            req = urllib.request.Request(cista, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, context=SSL_CTX, timeout=12) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+
+            casti = cista.rstrip("/").split("/")
+            konkretni_nazev = casti[-1] if len(casti) > 4 else None
+
+            scany = list(dict.fromkeys(re.findall(r'register/[\w\-/\.]+\.jp2', html)))
+            if not scany:
+                return None, "V odkazu Porta Fontium se nepodařilo najít skeny matriky."
+
+            vybrany_scan = scany[0]
+            if konkretni_nazev and not konkretni_nazev.isdigit():
+                for s in scany:
+                    if konkretni_nazev in s:
+                        vybrany_scan = s
+                        break
+
+            iip_url = f"http://www.portafontium.eu/fcgi-bin/iipsrv.fcgi?FIF={vybrany_scan}&wid=1600&cvt=jpeg"
+            iip_req = urllib.request.Request(iip_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(iip_req, context=SSL_CTX, timeout=15) as r2:
+                data = r2.read()
+            img = Image.open(io.BytesIO(data))
+            img.verify()
+            return data, None
+        except Exception as e:
+            return None, f"Chyba při stahování z Porta Fontium: {e}"
+
+    # 2. Běžné stažení přímého obrázku
     try:
-        cista = url.strip()
-        if not (cista.startswith("http://") or cista.startswith("https://")):
-            return None, "Odkaz musí začínat http:// nebo https://"
-        req = urllib.request.Request(
-            cista,
-            headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
-        )
-        with urllib.request.urlopen(req, timeout=14) as odpoved:
+        req = urllib.request.Request(cista, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, context=SSL_CTX, timeout=14) as odpoved:
             data = odpoved.read()
-        # Ověření, že jde o platný obrázek
         img = Image.open(io.BytesIO(data))
         img.verify()
         return data, None
@@ -230,6 +371,83 @@ def stahni_obrazek_z_url(url: str):
         return None, str(e)
 
 
+def ziskej_skeny_knihy(url: str):
+    """
+    Z URL matriky získá seznam scanů knihy.
+    Podporuje Porta fontium, stránkované archivy i jednotlivé URL.
+    """
+    cista = url.strip()
+    if not je_bezpecna_url(cista):
+        return "chyba", "Neplatný nebo nepovolený odkaz."
+
+    if "portafontium.eu/iipimage/" in cista:
+        try:
+            req = urllib.request.Request(cista, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, context=SSL_CTX, timeout=12) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+            scany = list(dict.fromkeys(re.findall(r'register/[\w\-/\.]+\.jp2', html)))
+            if not scany:
+                return "chyba", "V knize na Porta Fontium nebyly nalezeny žádné skeny."
+            return "porta", scany
+        except Exception as e:
+            return "chyba", f"Nepodařilo se načíst obsah knihy: {e}"
+
+    if re.search(r'(?:strana|page|p)=(\d+)', cista, re.I):
+        return "strankovane", cista
+
+    return "jine", [cista]
+
+
+def stahni_konkretni_scan(typ: str, polozka: str, cislo_strany: int = 1):
+    try:
+        if typ == "porta":
+            iip_url = f"http://www.portafontium.eu/fcgi-bin/iipsrv.fcgi?FIF={polozka}&wid=1600&cvt=jpeg"
+            req = urllib.request.Request(iip_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as r:
+                data = r.read()
+        elif typ == "strankovane":
+            nova_url = re.sub(r'((?:strana|page|p)=)(\d+)', rf'\g<1>{cislo_strany}', polozka, flags=re.I)
+            req = urllib.request.Request(nova_url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as r:
+                data = r.read()
+        else:
+            req = urllib.request.Request(polozka, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as r:
+                data = r.read()
+        img = Image.open(io.BytesIO(data))
+        img.verify()
+        return data, None
+    except Exception as e:
+        return None, str(e)
+
+
+def zkontroluj_stranku_vizualne(client, img_bytes, hledany_text: str) -> str:
+    prompt = f"""Jsi zkušený český paleograf a archivář. Rychle prohlédni tuto přiloženou fotografii/sken ze staré matriky.
+Hledáme: „{hledany_text}“.
+
+Úkol:
+1. Zjisti, zda se na této konkrétní stránce nachází hledané jméno, příjmení, rodina nebo událost. Ber v úvahu i kurent, švabach, latinu a dobové varianty (např. W/V, Y/I, ss/ß, -ová / -in).
+2. Stručně shrň, co na stránce je (roky, farnost/obec nebo hlavní zapsaná příjmení a druh zápisů).
+
+Odpověz stručně ve formátu:
+STAV: [NALEZENO / NENALEZENO / MOŽNÁ SHODA]
+POPIS: [1-3 věty co je na této stránce za zápisy a zda/kde se tam hledaná osoba nachází]
+"""
+    img = Image.open(io.BytesIO(img_bytes))
+    posledni_chyba = None
+    for m in MODELY:
+        try:
+            res = client.models.generate_content(model=m, contents=[img, prompt])
+            return res.text
+        except Exception as e:
+            posledni_chyba = e
+            if "503" in str(e) or "UNAVAILABLE" in str(e) or "429" in str(e) or "404" in str(e):
+                continue
+            raise e
+    raise posledni_chyba
+
+
+# ---------- AKCE TLAČÍTEK ----------
 def nove_hledani():
     st.session_state.zpravy = []
     st.session_state.obrazek = None
@@ -405,13 +623,13 @@ hr, table, th, td { border-color: var(--border) !important; }
 .znacka small { color: var(--muted); font-size: .76rem; }
 .sekce { font-size: .78rem; font-weight: 600; color: var(--muted); margin: 18px 0 6px 12px; }
 .prazdno { color: var(--muted); font-size: .85rem; padding: 2px 12px; }
-.st-key-historie button, .st-key-pomoc button { width: 100% !important; background: transparent !important; border: none !important;
+.st-key-historie button, .st-key-pomoc button, .st-key-profil button { width: 100% !important; background: transparent !important; border: none !important;
   border-radius: 999px !important; padding: 6px 12px !important; min-height: 38px !important; transition: background .2s !important; }
-.st-key-historie button > div, .st-key-pomoc button > div { justify-content: flex-start !important; width: 100% !important; }
-.st-key-historie button p, .st-key-pomoc button p { color: var(--text) !important; font-size: .9rem !important;
+.st-key-historie button > div, .st-key-pomoc button > div, .st-key-profil button > div { justify-content: flex-start !important; width: 100% !important; }
+.st-key-historie button p, .st-key-pomoc button p, .st-key-profil button p { color: var(--text) !important; font-size: .9rem !important;
   white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; }
-.st-key-historie button [data-testid="stIconMaterial"], .st-key-pomoc button [data-testid="stIconMaterial"] { color: var(--muted) !important; }
-.st-key-historie button:hover, .st-key-pomoc button:hover { background: var(--hover) !important; }
+.st-key-historie button [data-testid="stIconMaterial"], .st-key-pomoc button [data-testid="stIconMaterial"], .st-key-profil button [data-testid="stIconMaterial"] { color: var(--muted) !important; }
+.st-key-historie button:hover, .st-key-pomoc button:hover, .st-key-profil button:hover { background: var(--hover) !important; }
 .st-key-historie [data-testid="stBaseButton-primary"] { background: var(--hover) !important; }
 .st-key-historie [data-testid="stBaseButton-primary"] p { font-weight: 600 !important; }
 .st-key-historie [data-testid="stVerticalBlock"], .st-key-pomoc [data-testid="stVerticalBlock"] { gap: 2px !important; }
@@ -481,7 +699,7 @@ hr, table, th, td { border-color: var(--border) !important; }
 [class*="st-key-dl_"] button:active { transform: scale(.95); }
 @keyframes let { from { transform: translateY(.1em); } to { transform: translateY(-.1em); } }
 
-/* ---------- TLAČÍTKO uiverse.io/adamgiebl/shaggy-grasshopper-91 (Připojení matriky) ---------- */
+/* ---------- TLAČÍTKO PŘIPOJIT STRÁNKU (UIVERSE) ---------- */
 .st-key-pripojit_tlacitko button,
 .st-key-pripojit_tlacitko [data-testid="stPopover"] button,
 .st-key-pripojit_tlacitko .stPopoverTarget button,
@@ -743,13 +961,13 @@ Pokud se dotaz týká obcí, farností, archivů nebo kde hledat záznamy předk
 5. Upozorni na případné změny farní příslušnosti (např. před rokem 1784 jiná mateřská farnost než po josefínských reformách).
 
 Pokud se ptá na luštění starého písma (kurent, švabach, latina), překlady latinských a německých slov nebo stará povolání (podruh, chalupník, vejminkář, sedlák...), vysvětli jí vše jednoduše a srozumitelně.
-Pokud žádá přepis konkrétního záznamu ze stránky, vysvětli jí, že stačí fotku stránky nahrát tlačítkem 📎 nahoře nebo ikonou v políčku dole, a ty jí to hned celé přeložíš a přepíšeš.
+Pokud žádá přepis konkrétního záznamu ze stránky, vysvětli jí, že stačí fotku stránky nahrát tlačítkem 📎 nahoře, nebo zadat odkaz z Porta fontium do záložky Prolistovat matriku s AI.
 
 Dotaz od maminky:
 „{text}“"""
         else:
             return ("Pro tento úkol je potřeba přiložit fotografii stránky z matriky. "
-                    "📎 Přilož ji prosím tlačítkem nahoře nebo ikonou v políčku dole, "
+                    "📎 Přilož ji prosím tlačítkem nahoře, "
                     "a pak kartu stiskni znovu – hned se do čtení pustím.")
         obsah = [prompt]
     else:
@@ -842,6 +1060,24 @@ with st.sidebar:
         st.markdown(f'<div class="znacka"><img src="data:image/png;base64,{LOGO_B64}">'
                     f'<div><b>Lupa na matriky</b><small>Čtení starých zápisů s AI</small></div></div>',
                     unsafe_allow_html=True)
+
+    st.markdown('<div class="sekce">Tvůj profil</div>', unsafe_allow_html=True)
+    with st.container(key="profil"):
+        if je_prihlasen:
+            st.markdown(f"**👤 {uzivatel_jmeno}**  \n<small style='color:var(--muted);'>{uzivatel_email}</small>", unsafe_allow_html=True)
+            if st.button("🚪 Odhlásit se", key="btn_sidebar_logout", width="stretch"):
+                try:
+                    st.logout()
+                except Exception:
+                    pass
+                st.session_state.clear()
+                st.rerun()
+        else:
+            st.markdown(f"**👤 Režim hosta**  \n<small style='color:var(--muted);'>Soukromé dočasné sezení</small>", unsafe_allow_html=True)
+            if st.button("🔑 Přihlásit Google", key="btn_sidebar_login", width="stretch", help="Přihlásit se svým Google účtem pro trvalé uchování"):
+                st.session_state.rezim_host = False
+                st.rerun()
+
     with st.container(key="novy"):
         st.button("➕ Nové hledání", icon=":material/add:", width="stretch", on_click=nove_hledani)
 
@@ -855,7 +1091,7 @@ with st.sidebar:
                           help=nazev, on_click=otevri_historii, args=(i,),
                           type="primary" if i == st.session_state.aktivni else "secondary")
         with st.container(key="btn_smazat_hist"):
-            if st.button("🗑️ Smazat historii", width="stretch", help="Vymazat všechna uložená hledání z paměti"):
+            if st.button("🗑️ Smazat historii", width="stretch", help="Vymazat všechna uložená hledání z tvého prostoru"):
                 smaz_celou_historii()
                 st.rerun()
     else:
@@ -889,8 +1125,9 @@ with st.container(key="horni"):
 # ---------- UVÍTÁNÍ ----------
 klik = None
 if not st.session_state.zpravy:
-    st.markdown('<div class="pozdrav"><div class="p1">Ahoj, mami.</div>'
-                '<div class="p2">Koho dnes v matrikách hledáme?</div></div>', unsafe_allow_html=True)
+    osloveni = f"Ahoj, {uzivatel_jmeno}." if je_prihlasen else "Ahoj, mami."
+    st.markdown(f'<div class="pozdrav"><div class="p1">{osloveni}</div>'
+                f'<div class="p2">Koho dnes v matrikách hledáme?</div></div>', unsafe_allow_html=True)
     with st.container(key="karty"):
         for sloupec, (klic, info) in zip(st.columns(4), KARTY_INFO.items()):
             with sloupec:
@@ -906,7 +1143,7 @@ if not st.session_state.zpravy:
                     klik = klic
     if not st.session_state.info_skryto:
         with st.container(key="infobox"):
-            st.markdown(":material/info: Můžeš se mě **na cokoliv přímo zeptat** (např. *„Kde najdu matriky pro Nepomuk?“* nebo významy starých slov), nebo níže **přiložit fotku stránky z matriky** a nechat si ji celou přepsat a přeložit.")
+            st.markdown(":material/info: Můžeš se mě **na cokoliv přímo zeptat** (např. *„Kde najdu matriky pro Nepomuk?“*), vložit níže **fotku stránky z počítače či odkaz**, nebo nechat AI **automaticky prolistovat celou knihu** z archivu.")
             with st.container(horizontal=True, key="info_odkazy"):
                 st.button("Rozumím", key="info_ok", on_click=skryj_info)
 
@@ -933,16 +1170,20 @@ if st.session_state.zpravy and st.session_state.obrazek:
                 if st.button(popis, icon=ikona, key=f"cip_{klic}", width="stretch"):
                     klik = klic
 
-# ---------- PŘIPOJENÍ STRÁNKY Z MATRIKY (UIVERSE BUTTON shaggy-grasshopper-91) ----------
+# ---------- PŘIPOJENÍ STRÁNKY / PROLISTOVÁNÍ MATRIKY S AI ----------
 col_pr1, col_pr2 = st.columns([1, 1], vertical_alignment="center")
 with col_pr1:
     with st.container(key="pripojit_tlacitko"):
-        pop_popis = "📎 Připojit stránku (z PC nebo odkazem)" if not st.session_state.obrazek else "🔄 Změnit přiloženou stránku"
+        pop_popis = "📎 Připojit stránku (z PC, odkazem nebo AI)" if not st.session_state.obrazek else "🔄 Změnit stránku / Prozkoumat archiv"
         with st.popover(pop_popis, icon=":material/attachment:"):
-            st.markdown("### Připojit stránku matriky")
-            st.caption("Vyber obrázek z počítače, nebo vlož internetový odkaz (např. z Porta fontium).")
-            tab_soubor, tab_odkaz = st.tabs(["💻 Z počítače", "🌐 Z internetového odkazu"])
-            
+            st.markdown("### Připojit stránku matriky nebo prozkoumat knihu")
+            st.caption("Nahraj fotku ze svého počítače, zadej odkaz na scan, nebo nech AI automaticky prolistovat knihu v archivu.")
+            tab_soubor, tab_odkaz, tab_scanner = st.tabs([
+                "💻 Z počítače",
+                "🌐 Jedna stránka (URL)",
+                "🔍 Prolistovat matriku s AI"
+            ])
+
             with tab_soubor:
                 vybrany_soubor = st.file_uploader(
                     "Vyber obrázek matriky:",
@@ -958,11 +1199,11 @@ with col_pr1:
                         uloz_disk_historii()
                     st.toast(f"Obrázek „{vybrany_soubor.name}“ byl připojen!", icon=":material/check_circle:")
                     st.rerun()
-            
+
             with tab_odkaz:
                 zadany_odkaz = st.text_input(
-                    "Vlož odkaz na obrázek matriky:",
-                    placeholder="https://.../obrazek.jpg",
+                    "Vlož odkaz na obrázek nebo prohlížeč (např. Porta fontium):",
+                    placeholder="https://www.portafontium.eu/iipimage/... nebo přímý odkaz na jpg",
                     key="pop_url_vstup"
                 )
                 if st.button("Stáhnout a připojit z odkazu", type="primary", key="btn_potvrdit_url", use_container_width=True):
@@ -971,7 +1212,7 @@ with col_pr1:
                             data_url, chyba_url = stahni_obrazek_z_url(zadany_odkaz)
                             if data_url:
                                 st.session_state.obrazek = data_url
-                                st.session_state.nazev_obrazku = "Obrázek z internetového odkazu"
+                                st.session_state.nazev_obrazku = "Obrázek z archivu / odkazu"
                                 if st.session_state.aktivni is not None and 0 <= st.session_state.aktivni < len(st.session_state.historie):
                                     st.session_state.historie[st.session_state.aktivni]["obrazek"] = st.session_state.obrazek
                                     st.session_state.historie[st.session_state.aktivni]["nazev_obrazku"] = st.session_state.nazev_obrazku
@@ -982,6 +1223,135 @@ with col_pr1:
                                 st.error(f"Nepodařilo se stáhnout: {chyba_url}")
                     else:
                         st.warning("Vlož prosím platný odkaz.")
+
+            with tab_scanner:
+                st.markdown("#### 📖 Prolistovat knihu a najít zápis s AI")
+                st.caption("Zadej odkaz na knihu (např. z Porta fontium), rozsah stran a koho hledáš. AI postupně projde stránky, přečte písmo a najde hledaného předka.")
+
+                scan_url = st.text_input(
+                    "Odkaz na knihu v archivu:",
+                    placeholder="https://www.portafontium.eu/iipimage/30067332/...",
+                    key="input_scan_url",
+                    help="Zadej odkaz na knihu z Porta fontium nebo jiného online archivu."
+                )
+
+                col_s1, col_s2 = st.columns(2)
+                with col_s1:
+                    scan_od = st.number_input("Od strany:", min_value=1, max_value=999, value=1, step=1, key="num_scan_od")
+                with col_s2:
+                    scan_do = st.number_input("Do strany:", min_value=1, max_value=999, value=5, step=1, key="num_scan_do", help="Doporučeno 3–6 stran naráz pro rychlé zpracování.")
+
+                scan_jmeno = st.text_input(
+                    "Hledané příjmení nebo událost:",
+                    placeholder="např. Vlasák, Jan Novák, narození 1785...",
+                    key="input_scan_jmeno"
+                )
+
+                spustit_sken = st.button("🚀 Spustit AI průzkum stránek", type="primary", key="btn_run_scan", use_container_width=True)
+
+                if spustit_sken:
+                    if not api_key:
+                        st.error("Chybí API klíč k umělé inteligenci v nastavení aplikace (Secrets).")
+                    elif not scan_url.strip():
+                        st.warning("Vlož prosím odkaz na knihu v archivu.")
+                    elif not scan_jmeno.strip():
+                        st.warning("Zadej hledané příjmení nebo událost.")
+                    elif scan_do < scan_od:
+                        st.warning("Číslo cílové strany musí být stejné nebo vyšší než počáteční strana.")
+                    else:
+                        skutecne_do = min(scan_do, scan_od + 5)
+                        if scan_do > skutecne_do:
+                            st.info(f"Rozsah byl upraven na {scan_od} až {skutecne_do} (max 6 stran naráz pro rychlý průzkum).")
+
+                        typ_knihy, skeny = ziskej_skeny_knihy(scan_url)
+                        if typ_knihy == "chyba":
+                            st.error(f"Chyba při čtení knihy: {skeny}")
+                        else:
+                            vybrane_polozky = []
+                            if typ_knihy == "porta":
+                                celkem_dostupnych = len(skeny)
+                                for cislo in range(scan_od, skutecne_do + 1):
+                                    idx = cislo - 1
+                                    if 0 <= idx < celkem_dostupnych:
+                                        vybrane_polozky.append((cislo, skeny[idx]))
+                            elif typ_knihy == "strankovane":
+                                for cislo in range(scan_od, skutecne_do + 1):
+                                    vybrane_polozky.append((cislo, scan_url))
+                            else:
+                                vybrane_polozky = [(scan_od, scan_url)]
+
+                            if not vybrane_polozky:
+                                st.error("V zadaném rozsahu nebyly nalezeny žádné stránky.")
+                            else:
+                                vysledky_scanu = []
+                                vitezny_scan = None
+                                vitezna_strana = None
+
+                                with st.status(f"🤖 AI prochází stránky matriky a hledá „{scan_jmeno.strip()}“…", expanded=True) as status_box:
+                                    klient_ai = genai.Client(api_key=api_key)
+                                    for str_num, polozka in vybrane_polozky:
+                                        status_box.write(f"📄 **Strana {str_num}:** Stahuji archivní sken…")
+                                        img_data, ch_stazeni = stahni_konkretni_scan(typ_knihy, polozka, cislo_strany=str_num)
+                                        if not img_data:
+                                            status_box.write(f"⚠️ **Strana {str_num}:** Nepodařilo se stáhnout ({ch_stazeni})")
+                                            vysledky_scanu.append((str_num, "Chyba", f"Nepodařilo se stáhnout: {ch_stazeni}", False))
+                                            continue
+
+                                        status_box.write(f"🔍 **Strana {str_num}:** AI luští písmo a porovnává zápisy…")
+                                        try:
+                                            analyza = zkontroluj_stranku_vizualne(klient_ai, img_data, scan_jmeno.strip())
+                                            je_tam = any(x in analyza.upper() for x in ["STAV: NALEZENO", "STAV: [NALEZENO]", "STAV: MOŽNÁ"])
+                                            if je_tam:
+                                                status_box.write(f"🎉 **Strana {str_num}:** Nalezen záznam!")
+                                                vysledky_scanu.append((str_num, "Nalezeno", analyza, True))
+                                                vitezny_scan = img_data
+                                                vitezna_strana = str_num
+                                                status_box.update(label=f"🎉 Úspěch! Záznam nalezen na straně {str_num}!", state="complete")
+                                                break
+                                            else:
+                                                status_box.write(f"ℹ️ **Strana {str_num}:** {analyza.strip()}")
+                                                vysledky_scanu.append((str_num, "Nenalezeno", analyza, False))
+                                        except Exception as ex:
+                                            status_box.write(f"⚠️ **Strana {str_num}:** Chyba čtení: {ex}")
+                                            vysledky_scanu.append((str_num, "Chyba", str(ex), False))
+
+                                # Vyhodnocení a odeslání do chatu
+                                dotaz_text = f"🔎 Prolistovat matriku a najít „{scan_jmeno.strip()}“ (strany {scan_od} až {skutecne_do})"
+                                if vitezny_scan and vitezna_strana:
+                                    st.session_state.obrazek = vitezny_scan
+                                    st.session_state.nazev_obrazku = f"Nalezená stránka č. {vitezna_strana}"
+                                    odpoved_text = (
+                                        f"🎉 **Výborná zpráva! Hledaný záznam pro „{scan_jmeno.strip()}“ byl nalezen na straně {vitezna_strana}!**\n\n"
+                                        f"Tuto stránku jsem ti rovnou **připojil do Lupy** (můžeš si ji prohlédnout v plné kvalitě nahoře).\n\n"
+                                        f"**Zjištěné podrobnosti ze stránky:**\n"
+                                        f"{vysledky_scanu[-1][2]}\n\n"
+                                        f"💡 *Můžeš mi napsat další otázku k této stránce, nebo kliknout na tlačítka nahoře pro detailní přepis celého zápisu.*"
+                                    )
+                                else:
+                                    polozky_shrnut = []
+                                    for s_num, stav, txt, _ in vysledky_scanu:
+                                        polozky_shrnut.append(f"- **Strana {s_num}:** {txt.strip()}")
+                                    seznam_text = "\n".join(polozky_shrnut) if polozky_shrnut else "Žádné stránky se nepodařilo přečíst."
+                                    odpoved_text = (
+                                        f"Prozkoumal jsem stránky **{scan_od} až {skutecne_do}** v zadané matrice, ale přímou shodu pro „{scan_jmeno.strip()}“ jsem na nich nenalezl.\n\n"
+                                        f"**Přehled zkontrolovaných stránek a co na nich je:**\n"
+                                        f"{seznam_text}\n\n"
+                                        f"💡 *Tip: Můžeš zkusit prozkoumat další rozsah (např. od strany {skutecne_do + 1}) nebo vyzkoušet jiné pravopisné varianty příjmení.*"
+                                    )
+
+                                st.session_state.zpravy.append({
+                                    "role": "user",
+                                    "text": dotaz_text,
+                                    "obrazek": vitezny_scan if len(st.session_state.zpravy) == 0 else None
+                                })
+                                st.session_state.zpravy.append({
+                                    "role": "assistant",
+                                    "text": odpoved_text,
+                                    "stazeni": None,
+                                    "nazev": None
+                                })
+                                uloz_do_historie(f"Průzkum: {scan_jmeno.strip()}")
+                                st.rerun()
 
 with col_pr2:
     if st.session_state.obrazek:
