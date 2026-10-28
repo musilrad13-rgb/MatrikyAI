@@ -18,7 +18,7 @@ ZAKLAD = Path(__file__).parent
 LOGO = ZAKLAD / "logo.png"
 SLOZKA_UZIVATELU = ZAKLAD / "uzivatele"
 SLOZKA_UZIVATELU.mkdir(exist_ok=True)
-MODELY = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+MODELY = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.8-flash"]
 
 # SSL kontext pro bezpečné i archivní weby se staršími certifikáty (např. Porta fontium)
 SSL_CTX = ssl.create_default_context()
