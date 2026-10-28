@@ -267,6 +267,106 @@ def uloz_do_historie(nazev):
     uloz_disk_historii()
 
 
+# ---------- ARCHIVNÍ WEBY A ROZCESTNÍK ----------
+ARCHIVY_INFO = [
+    {
+        "nazev": "Porta fontium (SOA v Plzni)",
+        "oblast": "Plzeňský a Karlovarský kraj (Domažlice, Klatovy, Plzeň, Rokycany, Tachov, Cheb, Sokolov...)",
+        "url": "https://www.portafontium.eu/",
+        "hledani_url": "https://www.portafontium.eu/searching/all?category=matrika",
+        "ikona": "🌲",
+        "popis": "Západní Čechy – matriky, kroniky a sčítací operáty online zdarma bez registrace."
+    },
+    {
+        "nazev": "Acta Publica (MZA v Brně)",
+        "oblast": "Jihomoravský a Zlínský kraj, Vysočina (Brno, Znojmo, Jihlava, Třebíč, Kroměříž...)",
+        "url": "https://www.actapublica.eu/",
+        "hledani_url": "https://www.actapublica.eu/matriky/brno/",
+        "ikona": "🍇",
+        "popis": "Moravské matriky – křty, sňatky a úmrtí pro celou jižní a střední Moravu."
+    },
+    {
+        "nazev": "DigiArchiv SOA v Třeboni",
+        "oblast": "Jihočeský kraj a Pelhřimovsko (České Budějovice, Krumlov, Třeboň, Tábor, Písek...)",
+        "url": "https://digi.ceskearchivy.cz/",
+        "hledani_url": "https://digi.ceskearchivy.cz/",
+        "ikona": "🐟",
+        "popis": "Jižní Čechy – farní matriky, pozemkové knihy a soupisy poddaných podle panství."
+    },
+    {
+        "nazev": "eBadatelna SOA v Praze",
+        "oblast": "Středočeský kraj (Kladno, Příbram, Benešov, Kolín, Rakovník, Kutná Hora, Beroun...)",
+        "url": "https://ebadatelna.soapraha.cz/",
+        "hledani_url": "https://ebadatelna.soapraha.cz/pages/SearchMatrikaPage",
+        "ikona": "🏰",
+        "popis": "Střední Čechy – digitalizované církevní matriky obcí v okolí Prahy."
+    },
+    {
+        "nazev": "SOA v Zámrsku / Východní Čechy",
+        "oblast": "Královéhradecký a Pardubický kraj, Havlíčkův Brod (Krkonoše, Orlické hory...)",
+        "url": "https://vychodnicechy.ceskearchivy.cz/",
+        "hledani_url": "https://vychodnicechy.ceskearchivy.cz/",
+        "ikona": "⛰️",
+        "popis": "Východní Čechy – inventář farních matrik a digitalizované matriční knihy."
+    },
+    {
+        "nazev": "Digiteka Zemského archivu v Opavě",
+        "oblast": "Moravskoslezský a Olomoucký kraj (Opava, Ostrava, Olomouc, Šumperk, Jeseník...)",
+        "url": "https://digi.archives.cz/",
+        "hledani_url": "https://digi.archives.cz/",
+        "ikona": "⚒️",
+        "popis": "Severní Morava a Slezsko – digitalizované matriky, urbáře a gruntovní knihy."
+    },
+    {
+        "nazev": "Archiv hl. města Prahy (Praga Publica)",
+        "oblast": "Hlavní město Praha (historické pražské farnosti)",
+        "url": "https://katalog.ahmp.cz/pragapublica/",
+        "hledani_url": "https://katalog.ahmp.cz/pragapublica/matriky",
+        "ikona": "👑",
+        "popis": "Praha – veškeré pražské fary, pobytové přihlášky pražského policejního ředitelství."
+    },
+    {
+        "nazev": "Vademecum Národního archivu",
+        "oblast": "Celá Česká republika (židovské a vojenské matriky)",
+        "url": "https://vademecum.nacr.cz/",
+        "hledani_url": "https://vademecum.nacr.cz/",
+        "ikona": "📜",
+        "popis": "Národní archiv – digitalizované židovské matriky (HBS) a vojenské matriční zápisy."
+    },
+]
+
+
+@st.dialog("Archivní rozcestník – Kde hledat matriky online", width="large")
+def okno_archivy():
+    st.markdown("### 🏛️ Prohledej archivní weby pro svou obec")
+    st.caption("Zadej název obce a AI s živým vyhledáváním na internetu ti prohledá archivy, najde farnost i přímý odkaz.")
+
+    with st.form("form_archiv_dialog", clear_on_submit=False):
+        c_vstup, c_btn = st.columns([3, 1.2], vertical_alignment="bottom")
+        with c_vstup:
+            hledana_obec = st.text_input("Obec, město nebo farnost:", placeholder="např. Nepomuk, Tišnov, Blatná, Klenčí pod Čerchovem, Sedlčany...", key="vstup_obec_arch")
+        with c_btn:
+            spustit_hledani = st.form_submit_button("🔍 Prohledat s AI", type="primary", use_container_width=True)
+
+    if spustit_hledani and hledana_obec.strip():
+        dotaz = f"V jakém archivu a pod jakou farnost spadala obec {hledana_obec.strip()}? Prohledej archivní weby a najdi mi online odkaz na matriku."
+        st.session_state.zpravy.append({"role": "user", "text": dotaz, "obrazek": None})
+        uloz_do_historie(f"Archiv: {hledana_obec.strip()}")
+        st.rerun()
+
+    st.markdown("---")
+    st.markdown("#### 🗺️ České archivní portály podle krajů:")
+    for arch in ARCHIVY_INFO:
+        c1, c2 = st.columns([3.6, 1.4], vertical_alignment="center")
+        with c1:
+            st.markdown(f"**{arch['ikona']} [{arch['nazev']}]({arch['url']})**  \n"
+                        f"<small style='color:var(--muted);'>{arch['oblast']}</small>  \n"
+                        f"<small>{arch['popis']}</small>", unsafe_allow_html=True)
+        with c2:
+            st.link_button("Otevřít archiv ↗", arch["hledani_url"], use_container_width=True)
+        st.divider()
+
+
 @st.dialog("Slovníček výrazů", width="large")
 def okno_slovnicek():
     st.markdown(SLOVNICEK)
@@ -578,6 +678,28 @@ button[kind="secondary"] p {
 .st-key-infobox { background: var(--card); border-radius: 16px; padding: 16px 20px 10px; margin-top: 16px; }
 .st-key-infobox p { font-size: .9rem !important; line-height: 1.55 !important; }
 .st-key-infobox [data-testid="stIconMaterial"] { color: var(--muted) !important; }
+.st-key-archiv_tlacitka { margin-top: 12px; }
+.st-key-btn_otevrit_archivy button, .st-key-btn_otevrit_slovnik button {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 14px !important;
+  padding: 10px 16px !important;
+  text-align: left !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  transition: all .2s ease !important;
+}
+.st-key-btn_otevrit_archivy button:hover, .st-key-btn_otevrit_slovnik button:hover {
+  background: var(--hover) !important;
+  border-color: var(--accent) !important;
+  transform: translateY(-2px);
+}
+.st-key-btn_otevrit_archivy button p, .st-key-btn_otevrit_slovnik button p {
+  color: var(--text) !important;
+  font-weight: 600 !important;
+  font-size: .92rem !important;
+}
 .st-key-info_odkazy button { background: transparent !important; border: none !important; padding: 2px 8px !important; min-height: 0 !important; }
 .st-key-info_odkazy button p { color: var(--accent) !important; font-weight: 600 !important; }
 .st-key-info_odkazy button:hover { background: var(--hover) !important; }
@@ -663,16 +785,28 @@ def zeptej_se(obrazek_bytes, akce: str, text: str) -> str:
         if akce == "text":
             prompt = f"""Jsi zkušený, ochotný a milý český archivář, paleograf a genealog v aplikaci „Lupa na matriky“.
 Pomáháš paní (mamince), která bádá ve starých matrikách a rodokmenech své rodiny.
-Odpovídej česky, vřele, lidsky, srozumitelně a přehledně i pro laika. Používej odrážky a tučné zvýraznění.
+Odpovídej česky, vřele, lidsky, srozumitelně a přehledně i pro laika. Používej odrážky, tučné zvýraznění a klikatelné odkazy ve formátu [Název](URL).
 
-Může se tě ptát na:
-- čtení starých písem (kurent, švabach, novogotické kurzívy, latina, stará čeština), tvary písmen a na co si dát pozor
-- překlady historických slov a zkratek z latiny a němčiny (např. natus, copulati, defunctus, kmotři, příčiny úmrtí, zkratky obcí a domů)
-- stará řemesla a společenské postavení předků (podruh, chalupník, sedlák, vejminkář, baráčník, mlynář, šafář, koželuh...)
-- rady kde hledat matriky online (Porta fontium pro západní Čechy, Acta Publica pro jižní Moravu, SOA Zámrsk pro východní Čechy, SOA Třeboň pro jižní Čechy, Archiv hl. m. Prahy...)
-- obecné genealogické rady: jak postupovat dál v bádání, jak ověřovat věk a příbuzenské linie.
+SPECIÁLNÍ SCHOPNOST: VYHLEDÁVÁNÍ V ČESKÝCH ARCHIVECH A MATRIKÁCH
+Máš přístup k prohledávání českých archivních webů a online matrik.
+Pokud se dotaz týká obcí, farností, archivů nebo kde hledat záznamy předků:
+1. Urči současný název i historické (německé) varianty obce.
+2. Urči příslušný farní úřad (farnost), pod který obec v dané době spadala.
+3. Urči správný státní oblastní archiv a jeho online archivní web:
+   - **Porta fontium** (SOA Plzeň) – Plzeňský a Karlovarský kraj: https://www.portafontium.eu/
+   - **Acta Publica** (MZA Brno) – Morava a část Vysočiny (Brno, Jihlava, Znojmo, Třebíč...): https://www.actapublica.eu/
+   - **DigiArchiv SOA Třeboň** – Jihočeský kraj a Pelhřimov: https://digi.ceskearchivy.cz/
+   - **eBadatelna SOA Praha** – Středočeský kraj (Příbram, Kladno, Benešov, Kolín, Rakovník...): https://ebadatelna.soapraha.cz/
+   - **SOA v Zámrsku** – Východní Čechy (Hradec Králové, Pardubice, Chrudim, Náchod...): https://vychodnicechy.ceskearchivy.cz/
+   - **Digiteka ZA Opava** – Severní Morava a Slezsko (Opava, Ostrava, Olomouc, Šumperk...): https://digi.archives.cz/
+   - **Archiv hl. m. Prahy** (Praga Publica) – Farnosti na území Prahy: https://katalog.ahmp.cz/
+   - **Vademecum Národního archivu** – Židovské matriky a vojenské záznamy: https://vademecum.nacr.cz/
+   - **Kramerius NK ČR** – Dobové noviny, adresáře, seznamy padlých: https://kramerius.nkp.cz/
+4. Poskytni přímé klikatelné odkazy na příslušný archivní portál, návod jak tam matriku vyhledat a obvyklé časové rozsahy dochovaných knih (narození, sňatky, úmrtí).
+5. Upozorni na případné změny farní příslušnosti (např. před rokem 1784 jiná mateřská farnost než po josefínských reformách).
 
-Pokud se ptá na přepis konkrétního záznamu ze stránky, mile jí vysvětli, že stačí fotku stránky matriky nahrát tlačítkem 📎 nebo ikonou v políčku dole, a ty jí to okamžitě slovo od slova přeložíš a přepíšeš.
+Pokud se ptá na luštění starého písma (kurent, švabach, latina), překlady latinských a německých slov nebo stará povolání (podruh, chalupník, vejminkář, sedlák...), vysvětli jí vše jednoduše a srozumitelně.
+Pokud žádá přepis konkrétního záznamu ze stránky, vysvětli jí, že stačí fotku stránky nahrát tlačítkem 📎 nahoře nebo ikonou v políčku dole, a ty jí to hned celé přeložíš a přepíšeš.
 
 Dotaz od maminky:
 „{text}“"""
@@ -686,6 +820,7 @@ Dotaz od maminky:
             ukol = f"""Uživatelka napsala: „{text}“.
 Pokud jde o jméno nebo příjmení, najdi ho na stránce. Počítej s dobovými variantami pravopisu
 (w/v, y/i, ss/ß, latinské a německé tvary, ženské tvary -ová / -in).
+Pokud se ptá na obec, archiv nebo původ záznamu, doplň i informace o farnosti a příslušném archivu.
 Odpověz v tomto formátu:
 
 ### Nalezeno: ANO / NE / MOŽNÁ
@@ -714,9 +849,47 @@ Odpovídej česky, jednoduše a přehledně – čte to laik."""
         obsah = [img, prompt]
 
     client = genai.Client(api_key=api_key)
+
+    # Konfigurace pro živé vyhledávání na internetu a archivních webech (Google Search Grounding)
+    konfigurace = None
+    try:
+        from google.genai import types
+        konfigurace = types.GenerateContentConfig(
+            tools=[types.Tool(google_search=types.GoogleSearch())]
+        )
+    except Exception:
+        try:
+            konfigurace = {"tools": [{"google_search": {}}]}
+        except Exception:
+            konfigurace = None
+
     posledni_chyba = None
     for m in MODELY:
         try:
+            # U textových dotazů zapojíme živé vyhledávání v archivech
+            if konfigurace and obrazek_bytes is None:
+                try:
+                    res = client.models.generate_content(model=m, contents=obsah, config=konfigurace)
+                    odpoved_text = res.text
+                    zdroje = []
+                    try:
+                        cand = res.candidates[0] if (res and res.candidates) else None
+                        meta = cand.grounding_metadata if cand else None
+                        if meta and getattr(meta, "grounding_chunks", None):
+                            for chunk in meta.grounding_chunks:
+                                web = getattr(chunk, "web", None)
+                                if web and getattr(web, "uri", None):
+                                    titulek = getattr(web, "title", None) or web.uri
+                                    zdroje.append(f"- [{titulek}]({web.uri})")
+                    except Exception:
+                        pass
+                    if zdroje:
+                        unikatni_zdroje = list(dict.fromkeys(zdroje))[:4]
+                        odpoved_text += "\n\n---\n**🔗 Nalezené archivní zdroje a odkazy:**\n" + "\n".join(unikatni_zdroje)
+                    return odpoved_text
+                except Exception:
+                    pass
+
             return client.models.generate_content(model=m, contents=obsah).text
         except Exception as e:
             posledni_chyba = e
@@ -756,8 +929,10 @@ with st.sidebar:
     else:
         st.markdown('<div class="prazdno">Zatím tu nic není.</div>', unsafe_allow_html=True)
 
-    st.markdown('<div class="sekce">Pomoc</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sekce">Pomoc a archivy</div>', unsafe_allow_html=True)
     with st.container(key="pomoc"):
+        if st.button("Archivní rozcestník", icon=":material/travel_explore:", width="stretch", help="Kde hledat matriky online podle krajů a obcí"):
+            okno_archivy()
         if st.button("Slovníček výrazů", icon=":material/menu_book:", width="stretch"):
             okno_slovnicek()
         if st.button("Jak na to", icon=":material/help:", width="stretch"):
@@ -797,11 +972,23 @@ if not st.session_state.zpravy:
                     )
                 if st.button(info["titulek"], icon=info["ikona"], key=f"karta_{klic}", width="stretch", help=info["popis"]):
                     klik = klic
+    with st.container(key="archiv_tlacitka"):
+        c_arch1, c_arch2 = st.columns([1, 1])
+        with c_arch1:
+            if st.button("🏛️ Kde hledat předky: Prohledat archivní weby", width="stretch", key="btn_otevrit_archivy"):
+                okno_archivy()
+        with c_arch2:
+            if st.button("📖 Slovníček starých latinských a německých výrazů", width="stretch", key="btn_otevrit_slovnik"):
+                okno_slovnicek()
+
     if not st.session_state.info_skryto:
         with st.container(key="infobox"):
-            st.markdown(":material/forum: Můžeš se mě **na cokoliv přímo zeptat** i bez obrázku (např. významy starých slov, latinských frází, povolání předků nebo kde hledat), "
-                        "nebo níže **přiložit fotku stránky z matriky** a nechat si ji celou přepsat a přeložit.")
+            st.markdown(":material/travel_explore: **Hledáš, ve kterém archivu leží tvá obec?** "
+                        "Napiš dolů do chatu např. *„Kde najdu matriky pro obec Nepomuk?“* a AI ti online vyhledá správný archiv, farnost i přímý odkaz. "
+                        "Můžeš se také zeptat na stará slova, nebo níže **přiložit fotku stránky z matriky** k okamžitému přepisu.")
             with st.container(horizontal=True, key="info_odkazy"):
+                if st.button("🏛️ Otevřít archivní rozcestník", key="info_arch"):
+                    okno_archivy()
                 if st.button("Jak to funguje", key="info_jak"):
                     okno_napoveda()
                 st.button("Rozumím", key="info_ok", on_click=skryj_info)
@@ -822,12 +1009,16 @@ for i, z in enumerate(st.session_state.zpravy):
 
 zivy = st.container()
 
-if st.session_state.zpravy and st.session_state.obrazek:
+if st.session_state.zpravy:
     with st.container(key="cipy"):
-        for sloupec, (klic, (popis, ikona, _)) in zip(st.columns(4), AKCE.items()):
-            with sloupec:
+        c_cip1, c_cip2, c_cip3, c_cip4, c_cip5 = st.columns(5)
+        for col, (klic, (popis, ikona, _)) in zip([c_cip1, c_cip2, c_cip3, c_cip4], AKCE.items()):
+            with col:
                 if st.button(popis, icon=ikona, key=f"cip_{klic}", width="stretch"):
                     klik = klic
+        with c_cip5:
+            if st.button("Hledat v archivu", icon=":material/travel_explore:", key="cip_archiv", width="stretch"):
+                okno_archivy()
 
 # ---------- PŘIPOJENÍ STRÁNKY Z MATRIKY (UIVERSE BUTTON shaggy-grasshopper-91) ----------
 col_pr1, col_pr2 = st.columns([1, 1], vertical_alignment="center")
