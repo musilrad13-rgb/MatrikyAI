@@ -1,5 +1,6 @@
 import base64
 import io
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -19,7 +20,7 @@ st.set_page_config(
 )
 
 # ---------- PAMĚŤ APLIKACE ----------
-VYCHOZI = {"zpravy": [], "obrazek": None, "historie": [], "aktivni": None, "ceka": None,
+VYCHOZI = {"zpravy": [], "obrazek": None, "nazev_obrazku": None, "historie": [], "aktivni": None, "ceka": None,
            "tmavy": False, "info_skryto": False, "pismo": "Automaticky", "kniha": "Všechny druhy"}
 for k, v in VYCHOZI.items():
     st.session_state.setdefault(k, v)
@@ -71,9 +72,31 @@ Výstřižek se uloží do složky **Obrázky → Snímky obrazovky** a odtud ho
 
 
 # ---------- AKCE TLAČÍTEK ----------
+def stahni_obrazek_z_url(url: str):
+    try:
+        cista = url.strip()
+        if not (cista.startswith("http://") or cista.startswith("https://")):
+            return None, "Odkaz musí začínat http:// nebo https://"
+        req = urllib.request.Request(
+            cista,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=14) as odpoved:
+            data = odpoved.read()
+        # Ověření, že jde o platný obrázek
+        img = Image.open(io.BytesIO(data))
+        img.verify()
+        return data, None
+    except Exception as e:
+        return None, str(e)
+
+
 def nove_hledani():
     st.session_state.zpravy = []
     st.session_state.obrazek = None
+    st.session_state.nazev_obrazku = None
     st.session_state.aktivni = None
     st.session_state.ceka = None
 
@@ -172,6 +195,53 @@ hr, table, th, td { border-color: var(--border) !important; }
 [class*="st-key-dl_"] button:hover p { translate: 8em 0; }
 [class*="st-key-dl_"] button:active { transform: scale(.95); }
 @keyframes let { from { transform: translateY(.1em); } to { transform: translateY(-.1em); } }
+
+/* ---------- TLAČÍTKO uiverse.io/adamgiebl/shaggy-grasshopper-91 (Připojení matriky) ---------- */
+.st-key-pripojit_tlacitko [data-testid="stPopover"] > button {
+  display: inline-flex !important;
+  align-items: center !important;
+  font-family: inherit !important;
+  cursor: pointer !important;
+  font-weight: 500 !important;
+  font-size: 15px !important;
+  padding: 0.7em 1.4em 0.7em 1.1em !important;
+  color: white !important;
+  background: linear-gradient(
+    0deg,
+    rgba(20, 167, 62, 1) 0%,
+    rgba(102, 247, 113, 1) 100%
+  ) !important;
+  border: none !important;
+  box-shadow: 0 0.7em 1.5em -0.5em #14a73e98 !important;
+  letter-spacing: 0.05em !important;
+  border-radius: 20em !important;
+  transition: transform 0.2s, box-shadow 0.2s !important;
+}
+.st-key-pripojit_tlacitko [data-testid="stPopover"] > button:hover {
+  box-shadow: 0 0.5em 1.5em -0.5em #14a73e98 !important;
+  transform: translateY(-2px) !important;
+}
+.st-key-pripojit_tlacitko [data-testid="stPopover"] > button:active {
+  box-shadow: 0 0.3em 1em -0.5em #14a73e98 !important;
+  transform: translateY(1px) !important;
+}
+.st-key-pripojit_tlacitko [data-testid="stPopover"] > button p,
+.st-key-pripojit_tlacitko [data-testid="stPopover"] > button [data-testid="stIconMaterial"] {
+  color: white !important;
+  font-weight: 600 !important;
+}
+.status-pripojeno {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border: 1px solid rgba(20, 167, 62, 0.4);
+  color: var(--accent);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
 
 /* ---------- HORNÍ VÝBĚR ---------- */
 .st-key-horni [data-testid="stPopover"] button { background: transparent !important; border: none !important; border-radius: 10px !important; }
@@ -384,6 +454,60 @@ if st.session_state.zpravy and st.session_state.obrazek:
                 if st.button(popis, icon=ikona, key=f"cip_{klic}", width="stretch"):
                     klik = klic
 
+# ---------- PŘIPOJENÍ STRÁNKY Z MATRIKY (UIVERSE BUTTON shaggy-grasshopper-91) ----------
+col_pr1, col_pr2 = st.columns([1, 1], vertical_alignment="center")
+with col_pr1:
+    with st.container(key="pripojit_tlacitko"):
+        pop_popis = "📎 Připojit stránku (z PC nebo odkazem)" if not st.session_state.obrazek else "🔄 Změnit přiloženou stránku"
+        with st.popover(pop_popis, icon=":material/attachment:"):
+            st.markdown("### Připojit stránku matriky")
+            st.caption("Vyber obrázek z počítače, nebo vlož internetový odkaz (např. z Porta fontium).")
+            tab_soubor, tab_odkaz = st.tabs(["💻 Z počítače", "🌐 Z internetového odkazu"])
+            
+            with tab_soubor:
+                vybrany_soubor = st.file_uploader(
+                    "Vyber obrázek matriky:",
+                    type=["jpg", "jpeg", "png", "webp"],
+                    key="pop_uploader"
+                )
+                if vybrany_soubor is not None:
+                    st.session_state.obrazek = vybrany_soubor.getvalue()
+                    st.session_state.nazev_obrazku = vybrany_soubor.name
+                    st.toast(f"Obrázek „{vybrany_soubor.name}“ byl připojen!", icon=":material/check_circle:")
+                    st.rerun()
+            
+            with tab_odkaz:
+                zadany_odkaz = st.text_input(
+                    "Vlož odkaz na obrázek matriky:",
+                    placeholder="https://.../obrazek.jpg",
+                    key="pop_url_vstup"
+                )
+                if st.button("Stáhnout a připojit z odkazu", type="primary", key="btn_potvrdit_url", use_container_width=True):
+                    if zadany_odkaz:
+                        with st.spinner("Stahuji a kontroluji obrázek z odkazu…"):
+                            data_url, chyba_url = stahni_obrazek_z_url(zadany_odkaz)
+                            if data_url:
+                                st.session_state.obrazek = data_url
+                                st.session_state.nazev_obrazku = "Obrázek z internetového odkazu"
+                                st.toast("Obrázek z odkazu byl úspěšně připojen!", icon=":material/check_circle:")
+                                st.rerun()
+                            else:
+                                st.error(f"Nepodařilo se stáhnout: {chyba_url}")
+                    else:
+                        st.warning("Vlož prosím platný odkaz.")
+
+with col_pr2:
+    if st.session_state.obrazek:
+        c_status, c_del = st.columns([3, 1], vertical_alignment="center")
+        with c_status:
+            nazev = st.session_state.get("nazev_obrazku") or "Obrázek připraven"
+            st.markdown(f'<div class="status-pripojeno"><span class="tecka"></span><b>Připojeno:</b> {nazev}</div>', unsafe_allow_html=True)
+        with c_del:
+            if st.button("✕ Odebrat", key="btn_odebrat_foto", help="Odebrat aktuální fotku matriky"):
+                st.session_state.obrazek = None
+                st.session_state.nazev_obrazku = None
+                st.rerun()
+
 # ---------- SPODNÍ POLÍČKO ----------
 vstup = st.chat_input("Napiš příjmení nebo otázku…", accept_file=True,
                       file_type=["jpg", "jpeg", "png", "webp"])
@@ -393,6 +517,7 @@ if vstup:
     if vstup.files:
         novy_obrazek = vstup.files[0].getvalue()
         st.session_state.obrazek = novy_obrazek
+        st.session_state.nazev_obrazku = vstup.files[0].name
     text = (vstup.text or "").strip()
     pozadavek = ("text", text) if text else (st.session_state.ceka or "cela", "")
     st.session_state.ceka = None
@@ -403,20 +528,21 @@ if pozadavek:
     akce, text = pozadavek
     if st.session_state.obrazek is None:
         st.session_state.ceka = None if akce == "text" else akce
-        st.toast("Nejdřív přilož fotku stránky ikonou přílohy v políčku dole a odešli ji.",
+        st.toast("Nejdřív přilož fotku stránky (tlačítkem výše nebo v políčku).",
                  icon=":material/add_photo_alternate:")
     elif not api_key:
         st.error("Chybí API klíč. Ve Streamlitu ho nastav v Settings → Secrets.")
     else:
         popis = text if akce == "text" else AKCE[akce][0]
         zobrazeni = popis if novy_obrazek else popis + "  \n_(na předchozí stránce)_"
-        st.session_state.zpravy.append({"role": "user", "text": zobrazeni, "obrazek": novy_obrazek})
+        obrazek_pro_bublinu = novy_obrazek or (st.session_state.obrazek if len(st.session_state.zpravy) == 0 else None)
+        st.session_state.zpravy.append({"role": "user", "text": zobrazeni, "obrazek": obrazek_pro_bublinu})
         uloz_do_historie(popis)
 
         with zivy:
             with st.chat_message("user"):
-                if novy_obrazek:
-                    st.image(novy_obrazek, width=280)
+                if obrazek_pro_bublinu:
+                    st.image(obrazek_pro_bublinu, width=280)
                 st.markdown(zobrazeni)
             with st.chat_message("assistant", avatar=AVATAR_AI):
                 with st.spinner("Luštím staré písmo…"):
