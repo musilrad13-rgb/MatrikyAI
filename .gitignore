@@ -1,2 +1,5 @@
 .streamlit/secrets.toml
 __pycache__/
+historie_chatu.json
+historie_chatu.tmp
+

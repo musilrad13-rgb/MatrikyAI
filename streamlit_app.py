@@ -1,5 +1,6 @@
 import base64
 import io
+import json
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +11,7 @@ from PIL import Image
 
 ZAKLAD = Path(__file__).parent
 LOGO = ZAKLAD / "logo.png"
+SOUBOR_HISTORIE = ZAKLAD / "historie_chatu.json"
 MODELY = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash"]
 
 st.set_page_config(
@@ -19,11 +21,116 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ---------- TRVALÉ UKLÁDÁNÍ HISTORIE NA DISK ----------
+def _to_b64(val):
+    if not val:
+        return None
+    if isinstance(val, (bytes, bytearray)):
+        return base64.b64encode(val).decode("ascii")
+    if isinstance(val, str):
+        return val
+    return None
+
+
+def _from_b64(val):
+    if not val:
+        return None
+    if isinstance(val, str):
+        try:
+            return base64.b64decode(val.encode("ascii"))
+        except Exception:
+            return None
+    if isinstance(val, (bytes, bytearray)):
+        return bytes(val)
+    return None
+
+
+def uloz_disk_historii():
+    try:
+        data = []
+        for h in st.session_state.get("historie", []):
+            polozka = {
+                "nazev": h.get("nazev", "Hledání"),
+                "nazev_obrazku": h.get("nazev_obrazku"),
+                "obrazek_b64": _to_b64(h.get("obrazek")),
+                "zpravy": []
+            }
+            for z in h.get("zpravy", []):
+                polozka["zpravy"].append({
+                    "role": z.get("role"),
+                    "text": z.get("text"),
+                    "stazeni": z.get("stazeni"),
+                    "nazev": z.get("nazev"),
+                    "obrazek_b64": _to_b64(z.get("obrazek"))
+                })
+            data.append(polozka)
+        data = data[-20:]  # Uchováme posledních 20 hledání
+        temp_soubor = SOUBOR_HISTORIE.with_suffix(".tmp")
+        temp_soubor.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp_soubor.replace(SOUBOR_HISTORIE)
+    except Exception:
+        pass
+
+
+def nacti_disk_historii():
+    if not SOUBOR_HISTORIE.exists():
+        return []
+    try:
+        raw = json.loads(SOUBOR_HISTORIE.read_text(encoding="utf-8"))
+        historie = []
+        for h in raw:
+            obr = _from_b64(h.get("obrazek_b64"))
+            zpravy = []
+            for z in h.get("zpravy", []):
+                z_obr = _from_b64(z.get("obrazek_b64"))
+                zpravy.append({
+                    "role": z.get("role"),
+                    "text": z.get("text"),
+                    "stazeni": z.get("stazeni"),
+                    "nazev": z.get("nazev"),
+                    "obrazek": z_obr
+                })
+            historie.append({
+                "nazev": h.get("nazev", "Hledání"),
+                "nazev_obrazku": h.get("nazev_obrazku"),
+                "obrazek": obr,
+                "zpravy": zpravy
+            })
+        return historie
+    except Exception:
+        return []
+
+
+def smaz_celou_historii():
+    st.session_state.historie = []
+    st.session_state.zpravy = []
+    st.session_state.obrazek = None
+    st.session_state.nazev_obrazku = None
+    st.session_state.aktivni = None
+    if SOUBOR_HISTORIE.exists():
+        try:
+            SOUBOR_HISTORIE.unlink()
+        except Exception:
+            pass
+
+
 # ---------- PAMĚŤ APLIKACE ----------
 VYCHOZI = {"zpravy": [], "obrazek": None, "nazev_obrazku": None, "historie": [], "aktivni": None, "ceka": None,
            "tmavy": False, "info_skryto": False, "pismo": "Automaticky", "kniha": "Všechny druhy"}
 for k, v in VYCHOZI.items():
     st.session_state.setdefault(k, v)
+
+# Automatické obnovení historie po restartu / rebootu
+if "disk_nacteno" not in st.session_state:
+    st.session_state.disk_nacteno = True
+    nactena_historie = nacti_disk_historii()
+    if nactena_historie:
+        st.session_state.historie = nactena_historie
+        posledni = nactena_historie[-1]
+        st.session_state.zpravy = posledni["zpravy"]
+        st.session_state.obrazek = posledni["obrazek"]
+        st.session_state.nazev_obrazku = posledni.get("nazev_obrazku")
+        st.session_state.aktivni = len(nactena_historie) - 1
 
 LOGO_B64 = base64.b64encode(LOGO.read_bytes()).decode() if LOGO.exists() else ""
 AVATAR_AI = str(LOGO) if LOGO.exists() else ":material/menu_book:"
@@ -105,6 +212,7 @@ def otevri_historii(i):
     polozka = st.session_state.historie[i]
     st.session_state.zpravy = polozka["zpravy"]
     st.session_state.obrazek = polozka["obrazek"]
+    st.session_state.nazev_obrazku = polozka.get("nazev_obrazku")
     st.session_state.aktivni = i
     st.session_state.ceka = None
 
@@ -115,11 +223,18 @@ def skryj_info():
 
 def uloz_do_historie(nazev):
     if st.session_state.aktivni is None:
-        st.session_state.historie.append({"nazev": nazev, "zpravy": st.session_state.zpravy,
-                                          "obrazek": st.session_state.obrazek})
+        st.session_state.historie.append({
+            "nazev": nazev,
+            "nazev_obrazku": st.session_state.nazev_obrazku,
+            "zpravy": st.session_state.zpravy,
+            "obrazek": st.session_state.obrazek
+        })
         st.session_state.aktivni = len(st.session_state.historie) - 1
     else:
         st.session_state.historie[st.session_state.aktivni]["obrazek"] = st.session_state.obrazek
+        st.session_state.historie[st.session_state.aktivni]["nazev_obrazku"] = st.session_state.nazev_obrazku
+        st.session_state.historie[st.session_state.aktivni]["zpravy"] = st.session_state.zpravy
+    uloz_disk_historii()
 
 
 @st.dialog("Slovníček výrazů", width="large")
@@ -285,6 +400,20 @@ button[kind="secondary"] p {
   border-color: #ef4444 !important;
   color: #ef4444 !important;
 }
+.st-key-btn_smazat_hist button {
+  background: transparent !important;
+  border: 1px dashed var(--border) !important;
+  border-radius: 999px !important;
+  color: var(--muted) !important;
+  padding: 4px 10px !important;
+  font-size: 0.8rem !important;
+  margin-top: 6px !important;
+}
+.st-key-btn_smazat_hist button:hover {
+  background: rgba(239, 68, 68, 0.12) !important;
+  border-color: #ef4444 !important;
+  color: #ef4444 !important;
+}
 
 /* ---------- HORNÍ VÝBĚR ---------- */
 .st-key-horni [data-testid="stPopover"] button { background: transparent !important; border: none !important; border-radius: 10px !important; }
@@ -431,6 +560,10 @@ with st.sidebar:
                 st.button(kratky, icon=":material/chat_bubble:", key=f"hist_{i}", width="stretch",
                           help=nazev, on_click=otevri_historii, args=(i,),
                           type="primary" if i == st.session_state.aktivni else "secondary")
+        with st.container(key="btn_smazat_hist"):
+            if st.button("🗑️ Smazat historii", width="stretch", help="Vymazat všechna uložená hledání z paměti"):
+                smaz_celou_historii()
+                st.rerun()
     else:
         st.markdown('<div class="prazdno">Zatím tu nic není.</div>', unsafe_allow_html=True)
 
@@ -519,6 +652,10 @@ with col_pr1:
                 if vybrany_soubor is not None:
                     st.session_state.obrazek = vybrany_soubor.getvalue()
                     st.session_state.nazev_obrazku = vybrany_soubor.name
+                    if st.session_state.aktivni is not None and 0 <= st.session_state.aktivni < len(st.session_state.historie):
+                        st.session_state.historie[st.session_state.aktivni]["obrazek"] = st.session_state.obrazek
+                        st.session_state.historie[st.session_state.aktivni]["nazev_obrazku"] = st.session_state.nazev_obrazku
+                        uloz_disk_historii()
                     st.toast(f"Obrázek „{vybrany_soubor.name}“ byl připojen!", icon=":material/check_circle:")
                     st.rerun()
             
@@ -535,6 +672,10 @@ with col_pr1:
                             if data_url:
                                 st.session_state.obrazek = data_url
                                 st.session_state.nazev_obrazku = "Obrázek z internetového odkazu"
+                                if st.session_state.aktivni is not None and 0 <= st.session_state.aktivni < len(st.session_state.historie):
+                                    st.session_state.historie[st.session_state.aktivni]["obrazek"] = st.session_state.obrazek
+                                    st.session_state.historie[st.session_state.aktivni]["nazev_obrazku"] = st.session_state.nazev_obrazku
+                                    uloz_disk_historii()
                                 st.toast("Obrázek z odkazu byl úspěšně připojen!", icon=":material/check_circle:")
                                 st.rerun()
                             else:
@@ -608,4 +749,7 @@ if pozadavek:
 
         st.session_state.zpravy.append({"role": "assistant", "text": odpoved,
                                         "stazeni": stazeni, "nazev": nazev})
+        if st.session_state.aktivni is not None and 0 <= st.session_state.aktivni < len(st.session_state.historie):
+            st.session_state.historie[st.session_state.aktivni]["zpravy"] = st.session_state.zpravy
+        uloz_disk_historii()
         st.rerun()
