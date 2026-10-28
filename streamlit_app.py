@@ -197,15 +197,19 @@ hr, table, th, td { border-color: var(--border) !important; }
 @keyframes let { from { transform: translateY(.1em); } to { transform: translateY(-.1em); } }
 
 /* ---------- TLAČÍTKO uiverse.io/adamgiebl/shaggy-grasshopper-91 (Připojení matriky) ---------- */
-.st-key-pripojit_tlacitko [data-testid="stPopover"] > button {
+.st-key-pripojit_tlacitko button,
+.st-key-pripojit_tlacitko [data-testid="stPopover"] button,
+.st-key-pripojit_tlacitko .stPopoverTarget button,
+.st-key-pripojit_tlacitko div[data-testid="stPopover"] button {
   display: inline-flex !important;
   align-items: center !important;
+  justify-content: center !important;
   font-family: inherit !important;
   cursor: pointer !important;
   font-weight: 500 !important;
   font-size: 15px !important;
-  padding: 0.7em 1.4em 0.7em 1.1em !important;
-  color: white !important;
+  padding: 0.65em 1.4em 0.65em 1.1em !important;
+  color: #ffffff !important;
   background: linear-gradient(
     0deg,
     rgba(20, 167, 62, 1) 0%,
@@ -217,18 +221,44 @@ hr, table, th, td { border-color: var(--border) !important; }
   border-radius: 20em !important;
   transition: transform 0.2s, box-shadow 0.2s !important;
 }
-.st-key-pripojit_tlacitko [data-testid="stPopover"] > button:hover {
+.st-key-pripojit_tlacitko button:hover,
+.st-key-pripojit_tlacitko [data-testid="stPopover"] button:hover,
+.st-key-pripojit_tlacitko .stPopoverTarget button:hover,
+.st-key-pripojit_tlacitko div[data-testid="stPopover"] button:hover {
   box-shadow: 0 0.5em 1.5em -0.5em #14a73e98 !important;
   transform: translateY(-2px) !important;
+  background: linear-gradient(
+    0deg,
+    rgba(20, 167, 62, 1) 0%,
+    rgba(102, 247, 113, 1) 100%
+  ) !important;
 }
-.st-key-pripojit_tlacitko [data-testid="stPopover"] > button:active {
+.st-key-pripojit_tlacitko button:active,
+.st-key-pripojit_tlacitko [data-testid="stPopover"] button:active,
+.st-key-pripojit_tlacitko .stPopoverTarget button:active,
+.st-key-pripojit_tlacitko div[data-testid="stPopover"] button:active {
   box-shadow: 0 0.3em 1em -0.5em #14a73e98 !important;
   transform: translateY(1px) !important;
 }
-.st-key-pripojit_tlacitko [data-testid="stPopover"] > button p,
-.st-key-pripojit_tlacitko [data-testid="stPopover"] > button [data-testid="stIconMaterial"] {
-  color: white !important;
+.st-key-pripojit_tlacitko button p,
+.st-key-pripojit_tlacitko button span,
+.st-key-pripojit_tlacitko button [data-testid="stIconMaterial"],
+.st-key-pripojit_tlacitko [data-testid="stPopover"] button p,
+.st-key-pripojit_tlacitko [data-testid="stPopover"] button span,
+.st-key-pripojit_tlacitko [data-testid="stPopover"] button [data-testid="stIconMaterial"] {
+  color: #ffffff !important;
   font-weight: 600 !important;
+}
+button[kind="secondary"] {
+  background: var(--card) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+}
+button[kind="secondary"]:hover {
+  background: var(--hover) !important;
+}
+button[kind="secondary"] p {
+  color: var(--text) !important;
 }
 .status-pripojeno {
   display: inline-flex;
@@ -241,6 +271,19 @@ hr, table, th, td { border-color: var(--border) !important; }
   border-radius: 999px;
   font-size: 0.85rem;
   font-weight: 600;
+}
+.st-key-btn_odebrat_foto button {
+  background: transparent !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 999px !important;
+  color: var(--muted) !important;
+  padding: 4px 12px !important;
+  font-size: 0.82rem !important;
+}
+.st-key-btn_odebrat_foto button:hover {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-color: #ef4444 !important;
+  color: #ef4444 !important;
 }
 
 /* ---------- HORNÍ VÝBĚR ---------- */
@@ -302,7 +345,10 @@ hr, table, th, td { border-color: var(--border) !important; }
 [data-testid="stChatInputSubmitButton"]:active { transform: scale(.92); }
 
 /* ---------- OKNA, VÝBĚRY, OZNÁMENÍ ---------- */
-[data-testid="stPopoverBody"], [data-testid="stDialog"] [role="dialog"] { background: var(--side) !important; color: var(--text) !important; border-color: var(--border) !important; }
+[data-testid="stPopoverBody"], [data-testid="stDialog"] [role="dialog"] { background: var(--side) !important; color: var(--text) !important; border: 1px solid var(--border) !important; box-shadow: 0 12px 36px rgba(0,0,0,.25) !important; }
+[data-testid="stPopoverBody"] input, [data-testid="stDialog"] input { background: var(--card) !important; color: var(--text) !important; border: 1px solid var(--border) !important; }
+[data-testid="stPopoverBody"] [data-testid="stFileUploaderDropzone"] { background: var(--card) !important; border: 1px dashed var(--border) !important; }
+[data-testid="stPopoverBody"] [data-testid="stFileUploaderDropzone"] * { color: var(--text) !important; }
 [data-testid="stDialog"] [role="dialog"] svg { color: var(--muted) !important; }
 [data-testid^="stBaseButton-pills"] { background: var(--card) !important; border-color: var(--border) !important; }
 [data-testid^="stBaseButton-pills"] p { color: var(--text) !important; }
