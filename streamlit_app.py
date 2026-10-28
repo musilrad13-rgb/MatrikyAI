@@ -135,18 +135,48 @@ if "disk_nacteno" not in st.session_state:
 LOGO_B64 = base64.b64encode(LOGO.read_bytes()).decode() if LOGO.exists() else ""
 AVATAR_AI = str(LOGO) if LOGO.exists() else ":material/menu_book:"
 
-AKCE = {
-    "cela": ("Přepiš mi celou stránku", ":material/description:",
-             "Přepiš postupně všechny zápisy na stránce. U každého uveď **Přesný přepis** a **Český překlad**."),
-    "rodina": ("Najdi rodiče, kmotry a svědky", ":material/family_restroom:",
-               "Ke každému zápisu přehledně vypiš: hlavní osobu, rodiče (i prarodiče, pokud jsou uvedeni), "
-               "kmotry nebo svědky, jejich povolání a bydliště."),
-    "data": ("Vypiš všechna data a místa", ":material/calendar_month:",
-             "Vypiš přehlednou tabulku všech zápisů: datum, jméno, obec, číslo domu a druh události "
-             "(narození / sňatek / úmrtí)."),
-    "preklad": ("Přelož stránku do češtiny", ":material/translate:",
-                "Přelož celou stránku do srozumitelné současné češtiny, zápis po zápisu. Původní přepis nepiš."),
+# ---------- KARTY ÚLOH S OBRÁZKY ----------
+IMG_KARTY_DIR = ZAKLAD / "img_karty"
+KARTY_INFO = {
+    "cela": {
+        "titulek": "Přepis celé stránky",
+        "podtitul": "Přečíst kurent, švabach i latinu",
+        "soubor": "karta_cela.jpg",
+        "popis": "Přepiš mi celou stránku",
+        "ikona": ":material/description:",
+        "prompt": "Přepiš postupně všechny zápisy na stránce. U každého uveď **Přesný přepis** a **Český překlad**."
+    },
+    "rodina": {
+        "titulek": "Rodiče a svědci",
+        "podtitul": "Najít předky, kmotry a obce",
+        "soubor": "karta_rodina.jpg",
+        "popis": "Najdi rodiče, kmotry a svědky",
+        "ikona": ":material/family_restroom:",
+        "prompt": "Ke každému zápisu přehledně vypiš: hlavní osobu, rodiče (i prarodiče, pokud jsou uvedeni), kmotry nebo svědky, jejich povolání a bydliště."
+    },
+    "data": {
+        "titulek": "Data a události",
+        "podtitul": "Přehledná tabulka zápisů",
+        "soubor": "karta_data.jpg",
+        "popis": "Vypiš všechna data a místa",
+        "ikona": ":material/calendar_month:",
+        "prompt": "Vypiš přehlednou tabulku všech zápisů: datum, jméno, obec, číslo domu a druh události (narození / sňatek / úmrtí)."
+    },
+    "preklad": {
+        "titulek": "Překlad do češtiny",
+        "podtitul": "Srozumitelný převod zápisů",
+        "soubor": "karta_preklad.jpg",
+        "popis": "Přelož stránku do češtiny",
+        "ikona": ":material/translate:",
+        "prompt": "Přelož celou stránku do srozumitelné současné češtiny, zápis po zápisu. Původní přepis nepiš."
+    },
 }
+KARTY_B64 = {}
+for _k, _v in KARTY_INFO.items():
+    _p = IMG_KARTY_DIR / _v["soubor"]
+    KARTY_B64[_k] = base64.b64encode(_p.read_bytes()).decode() if _p.exists() else ""
+
+AKCE = {k: (v["popis"], v["ikona"], v["prompt"]) for k, v in KARTY_INFO.items()}
 
 SLOVNICEK = """
 | Latinsky · německy | Česky |
@@ -289,18 +319,78 @@ hr, table, th, td { border-color: var(--border) !important; }
 .st-key-rezim p { font-size: .9rem !important; margin: 0 !important; }
 .st-key-rezim [data-testid="stIconMaterial"] { color: var(--muted) !important; }
 
-/* ---------- TLAČÍTKO 1 – Nové hledání ---------- */
-.st-key-novy button { position: relative; overflow: hidden; border: none !important; border-radius: 999px !important;
-  padding: .7rem 1.2rem !important; background: linear-gradient(135deg, var(--accent2), var(--accent)) !important;
-  box-shadow: 0 6px 18px rgba(15,157,88,.35) !important; transition: transform .2s, box-shadow .2s !important; }
-.st-key-novy button::before { content: ""; position: absolute; top: 0; left: -80%; width: 50%; height: 100%;
-  background: linear-gradient(120deg, transparent, rgba(255,255,255,.5), transparent); transform: skewX(-20deg); transition: left .6s; }
-.st-key-novy button:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(15,157,88,.45) !important; }
+/* ---------- TLAČÍTKO 1 – Nové hledání / Nový chat ---------- */
+.st-key-novy button {
+  position: relative !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(255, 255, 255, 0.25) !important;
+  border-radius: 999px !important;
+  padding: .75rem 1.3rem !important;
+  background: linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%) !important;
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.4) !important;
+  transition: transform .2s, box-shadow .2s !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+.st-key-novy button::before {
+  content: "";
+  position: absolute;
+  top: 0; left: -80%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, .5), transparent);
+  transform: skewX(-20deg);
+  transition: left .6s;
+}
+.st-key-novy button:hover {
+  transform: translateY(-2px) scale(1.02) !important;
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.55) !important;
+  background: linear-gradient(135deg, #34d399 0%, #10b981 50%, #059669 100%) !important;
+}
 .st-key-novy button:hover::before { left: 130%; }
 .st-key-novy button:active { transform: scale(.97); }
-.st-key-novy button p, .st-key-novy button [data-testid="stIconMaterial"] { color: #fff !important; font-weight: 600 !important; }
-.st-key-novy button [data-testid="stIconMaterial"] { transition: transform .3s; }
-.st-key-novy button:hover [data-testid="stIconMaterial"] { transform: rotate(90deg); }
+.st-key-novy button p {
+  color: #ffffff !important;
+  font-size: 1.02rem !important;
+  font-weight: 700 !important;
+  margin: 0 !important;
+}
+.st-key-novy button [data-testid="stIconMaterial"] {
+  color: #ffffff !important;
+  font-size: 1.5rem !important;
+  font-weight: 900 !important;
+  background: rgba(255, 255, 255, 0.28) !important;
+  border-radius: 50% !important;
+  padding: 3px !important;
+  margin-right: 8px !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2) !important;
+  transition: transform .3s ease !important;
+}
+.st-key-novy button:hover [data-testid="stIconMaterial"] {
+  transform: rotate(90deg) scale(1.15) !important;
+  background: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Rychlé plus tlačítko v záhlaví seznamu chatů */
+.st-key-mini_plus button {
+  background: rgba(16, 185, 129, 0.18) !important;
+  border: 1.5px solid var(--accent) !important;
+  border-radius: 999px !important;
+  padding: 2px 10px !important;
+  color: var(--accent) !important;
+  font-size: 1rem !important;
+  font-weight: 800 !important;
+  line-height: 1.2 !important;
+  min-height: 28px !important;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.2) !important;
+  transition: all 0.2s ease !important;
+}
+.st-key-mini_plus button:hover {
+  background: var(--accent) !important;
+  color: #ffffff !important;
+  transform: scale(1.1) !important;
+}
 
 /* ---------- TLAČÍTKO 2 – Stáhnout přepis ---------- */
 [class*="st-key-dl_"] button { background: var(--accent) !important; border: none !important; border-radius: 16px !important;
@@ -420,21 +510,71 @@ button[kind="secondary"] p {
 .st-key-horni [data-testid="stPopover"] button p { font-size: 1.1rem !important; color: var(--text) !important; }
 .st-key-horni [data-testid="stPopover"] button:hover { background: var(--hover) !important; }
 
-/* ---------- UVÍTÁNÍ ---------- */
-.pozdrav { margin: 6vh 0 36px; }
+/* ---------- UVÍTÁNÍ A KARTY S OBRÁZKY ---------- */
+.pozdrav { margin: 4vh 0 24px; }
 .pozdrav .p1, .pozdrav .p2 { font-size: clamp(2.3rem, 5vw, 3.6rem); font-weight: 500; line-height: 1.15; letter-spacing: -.03em; }
 .pozdrav .p1 { background: linear-gradient(74deg, #34a853 0%, #0f9d58 30%, #00acc1 65%, #7cb342 100%);
   -webkit-background-clip: text; background-clip: text; color: transparent; }
 .pozdrav .p2 { color: var(--muted2); }
-.st-key-karty button { height: 168px !important; background: var(--card) !important; border: none !important; border-radius: 16px !important;
-  padding: 16px !important; display: flex !important; flex-direction: column-reverse !important; align-items: flex-start !important;
-  justify-content: space-between !important; transition: background .2s, transform .2s !important; }
-.st-key-karty button > div:not([data-testid="stMarkdownContainer"]) { display: flex !important; flex-direction: column-reverse !important;
-  justify-content: space-between !important; align-items: flex-start !important; height: 100% !important; width: 100% !important; }
-.st-key-karty button:hover { background: var(--hover) !important; transform: translateY(-2px); }
-.st-key-karty button p { text-align: left !important; font-size: .95rem !important; line-height: 1.4 !important; color: var(--text) !important; }
-.st-key-karty button [data-testid="stIconMaterial"] { align-self: flex-end !important; background: var(--bg) !important; border-radius: 50% !important;
-  padding: 8px !important; font-size: 1.3rem !important; color: var(--text) !important; }
+
+.st-key-karty { margin: 1.2rem 0 .8rem; }
+.karta-nahled {
+  width: 100%;
+  height: 120px;
+  overflow: hidden;
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  background: var(--card);
+}
+.karta-nahled img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform .35s ease;
+}
+.st-key-karty [data-testid="stVerticalBlock"]:hover .karta-nahled img {
+  transform: scale(1.06);
+}
+.st-key-karty button {
+  height: auto !important;
+  min-height: 58px !important;
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-top: none !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  border-bottom-left-radius: 18px !important;
+  border-bottom-right-radius: 18px !important;
+  padding: 10px 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  box-shadow: 0 4px 14px rgba(0,0,0,.08) !important;
+  transition: background .2s, border-color .2s, transform .2s !important;
+}
+.st-key-karty button:hover {
+  background: var(--hover) !important;
+  border-color: var(--accent) !important;
+  transform: translateY(-2px);
+}
+.st-key-karty button p {
+  text-align: left !important;
+  font-size: .95rem !important;
+  font-weight: 600 !important;
+  line-height: 1.35 !important;
+  color: var(--text) !important;
+  margin: 0 !important;
+}
+.st-key-karty button [data-testid="stIconMaterial"] {
+  font-size: 1.3rem !important;
+  color: var(--accent) !important;
+  margin-right: 8px !important;
+  flex-shrink: 0 !important;
+}
 .st-key-infobox { background: var(--card); border-radius: 16px; padding: 16px 20px 10px; margin-top: 16px; }
 .st-key-infobox p { font-size: .9rem !important; line-height: 1.55 !important; }
 .st-key-infobox [data-testid="stIconMaterial"] { color: var(--muted) !important; }
@@ -465,8 +605,27 @@ button[kind="secondary"] p {
 [data-testid="stChatInput"] > div { background: transparent !important; border: none !important; }
 [data-testid="stChatInput"] textarea { background: transparent !important; color: var(--text) !important; font-size: 1rem !important; }
 [data-testid="stChatInput"] textarea::placeholder { color: var(--muted) !important; }
-[data-testid="stChatInputFileUploadButton"] { border-radius: 50% !important; color: var(--muted) !important; }
-[data-testid="stChatInputFileUploadButton"]:hover { background: var(--hover) !important; }
+
+/* Zvýrazněné PLUS tlačítko pro přílohy v poli chatu */
+[data-testid="stChatInputFileUploadButton"] {
+  background: rgba(16, 185, 129, 0.22) !important;
+  border: 2px solid var(--accent) !important;
+  border-radius: 50% !important;
+  color: var(--accent) !important;
+  transform: scale(1.18) !important;
+  margin-right: 8px !important;
+  transition: all .25s ease !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3) !important;
+}
+[data-testid="stChatInputFileUploadButton"]:hover {
+  background: var(--accent) !important;
+  color: #ffffff !important;
+  transform: scale(1.28) !important;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.5) !important;
+}
+[data-testid="stChatInputFileUploadButton"] svg {
+  stroke-width: 2.8 !important;
+}
 [data-testid="stChatInputSubmitButton"] { background: var(--accent) !important; color: #fff !important; border-radius: 14px !important;
   overflow: hidden; transition: transform .2s, background .2s !important; }
 [data-testid="stChatInputSubmitButton"]:disabled { background: var(--hover) !important; color: var(--muted) !important; }
@@ -496,11 +655,35 @@ except Exception:
 
 
 # ---------- DOTAZ NA GEMINI ----------
-def zeptej_se(obrazek_bytes: bytes, akce: str, text: str) -> str:
+def zeptej_se(obrazek_bytes, akce: str, text: str) -> str:
     pismo = st.session_state.get("pismo") or "Automaticky"
     kniha = st.session_state.get("kniha") or "Všechny druhy"
-    if akce == "text":
-        ukol = f"""Uživatelka napsala: „{text}“.
+
+    if obrazek_bytes is None:
+        if akce == "text":
+            prompt = f"""Jsi zkušený, ochotný a milý český archivář, paleograf a genealog v aplikaci „Lupa na matriky“.
+Pomáháš paní (mamince), která bádá ve starých matrikách a rodokmenech své rodiny.
+Odpovídej česky, vřele, lidsky, srozumitelně a přehledně i pro laika. Používej odrážky a tučné zvýraznění.
+
+Může se tě ptát na:
+- čtení starých písem (kurent, švabach, novogotické kurzívy, latina, stará čeština), tvary písmen a na co si dát pozor
+- překlady historických slov a zkratek z latiny a němčiny (např. natus, copulati, defunctus, kmotři, příčiny úmrtí, zkratky obcí a domů)
+- stará řemesla a společenské postavení předků (podruh, chalupník, sedlák, vejminkář, baráčník, mlynář, šafář, koželuh...)
+- rady kde hledat matriky online (Porta fontium pro západní Čechy, Acta Publica pro jižní Moravu, SOA Zámrsk pro východní Čechy, SOA Třeboň pro jižní Čechy, Archiv hl. m. Prahy...)
+- obecné genealogické rady: jak postupovat dál v bádání, jak ověřovat věk a příbuzenské linie.
+
+Pokud se ptá na přepis konkrétního záznamu ze stránky, mile jí vysvětli, že stačí fotku stránky matriky nahrát tlačítkem 📎 nebo ikonou v políčku dole, a ty jí to okamžitě slovo od slova přeložíš a přepíšeš.
+
+Dotaz od maminky:
+„{text}“"""
+        else:
+            return ("Pro tento úkol je potřeba přiložit fotografii stránky z matriky. "
+                    "📎 Přilož ji prosím tlačítkem nahoře nebo ikonou v políčku dole, "
+                    "a pak kartu stiskni znovu – hned se do čtení pustím.")
+        obsah = [prompt]
+    else:
+        if akce == "text":
+            ukol = f"""Uživatelka napsala: „{text}“.
 Pokud jde o jméno nebo příjmení, najdi ho na stránce. Počítej s dobovými variantami pravopisu
 (w/v, y/i, ss/ß, latinské a německé tvary, ženské tvary -ová / -in).
 Odpověz v tomto formátu:
@@ -515,10 +698,10 @@ Pro každý zápis:
 
 Pokud nic nenajdeš, vypiš podobně znějící jména ze stránky.
 Pokud jde o otázku, odpověz na ni podle toho, co je na stránce."""
-    else:
-        ukol = AKCE[akce][2]
+        else:
+            ukol = AKCE[akce][2]
 
-    prompt = f"""Jsi zkušený archivář a paleograf, expert na čtení českých matrik
+        prompt = f"""Jsi zkušený archivář a paleograf, expert na čtení českých matrik
 (latina, němčina psaná kurentem / švabachem, stará čeština).
 Písmo podle uživatelky: {pismo}. Druh matriky: {kniha}.
 
@@ -527,13 +710,14 @@ Písmo podle uživatelky: {pismo}. Druh matriky: {kniha}.
 Nečitelná místa označ [nečitelné], nejistá čtení napiš takto: [slovo?].
 Odpovídej česky, jednoduše a přehledně – čte to laik."""
 
+        img = Image.open(io.BytesIO(obrazek_bytes))
+        obsah = [img, prompt]
+
     client = genai.Client(api_key=api_key)
-    img = Image.open(io.BytesIO(obrazek_bytes))
-    
     posledni_chyba = None
     for m in MODELY:
         try:
-            return client.models.generate_content(model=m, contents=[img, prompt]).text
+            return client.models.generate_content(model=m, contents=obsah).text
         except Exception as e:
             posledni_chyba = e
             if "503" in str(e) or "UNAVAILABLE" in str(e) or "429" in str(e) or "404" in str(e):
@@ -549,9 +733,14 @@ with st.sidebar:
                     f'<div><b>Lupa na matriky</b><small>Čtení starých zápisů s AI</small></div></div>',
                     unsafe_allow_html=True)
     with st.container(key="novy"):
-        st.button("Nové hledání", icon=":material/add:", width="stretch", on_click=nove_hledani)
+        st.button("➕ Nové hledání / chat", icon=":material/add:", width="stretch", on_click=nove_hledani)
 
-    st.markdown('<div class="sekce">Nedávná hledání</div>', unsafe_allow_html=True)
+    c_sekce, c_plus = st.columns([3.8, 1.2], vertical_alignment="center")
+    with c_sekce:
+        st.markdown('<div class="sekce" style="margin:0; padding:12px 0 6px;">Nedávná hledání</div>', unsafe_allow_html=True)
+    with c_plus:
+        with st.container(key="mini_plus"):
+            st.button("➕", help="Zahájit nový chat / hledání", on_click=nove_hledani, key="btn_mini_novy")
     if st.session_state.historie:
         with st.container(key="historie"):
             for i in reversed(range(len(st.session_state.historie))):
@@ -596,15 +785,22 @@ if not st.session_state.zpravy:
     st.markdown('<div class="pozdrav"><div class="p1">Ahoj, mami.</div>'
                 '<div class="p2">Koho dnes v matrikách hledáme?</div></div>', unsafe_allow_html=True)
     with st.container(key="karty"):
-        for sloupec, (klic, (popis, ikona, _)) in zip(st.columns(4), AKCE.items()):
+        for sloupec, (klic, info) in zip(st.columns(4), KARTY_INFO.items()):
             with sloupec:
-                if st.button(popis, icon=ikona, key=f"karta_{klic}", width="stretch"):
+                obr_b64 = KARTY_B64.get(klic, "")
+                if obr_b64:
+                    st.markdown(
+                        f'<div class="karta-nahled">'
+                        f'<img src="data:image/jpeg;base64,{obr_b64}" alt="{info["titulek"]}">'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                if st.button(info["titulek"], icon=info["ikona"], key=f"karta_{klic}", width="stretch", help=info["popis"]):
                     klik = klic
     if not st.session_state.info_skryto:
         with st.container(key="infobox"):
-            st.markdown(":material/shield: Nejdřív přilož **fotku stránky z matriky** ikonou přílohy v políčku dole. "
-                        "Pak napiš příjmení, nebo klikni na jednu z karet. Fotky se v aplikaci neukládají – "
-                        "k přečtení se odešlou do Google Gemini a po zavření stránky zmizí.")
+            st.markdown(":material/forum: Můžeš se mě **na cokoliv přímo zeptat** i bez obrázku (např. významy starých slov, latinských frází, povolání předků nebo kde hledat), "
+                        "nebo níže **přiložit fotku stránky z matriky** a nechat si ji celou přepsat a přeložit.")
             with st.container(horizontal=True, key="info_odkazy"):
                 if st.button("Jak to funguje", key="info_jak"):
                     okno_napoveda()
@@ -713,16 +909,21 @@ elif klik:
 
 if pozadavek:
     akce, text = pozadavek
-    if st.session_state.obrazek is None:
-        st.session_state.ceka = None if akce == "text" else akce
-        st.toast("Nejdřív přilož fotku stránky (tlačítkem výše nebo v políčku).",
-                 icon=":material/add_photo_alternate:")
-    elif not api_key:
+    if not api_key:
         st.error("Chybí API klíč. Ve Streamlitu ho nastav v Settings → Secrets.")
+    elif st.session_state.obrazek is None and akce != "text":
+        st.session_state.ceka = akce
+        st.toast("Pro tento úkol nejdřív přilož fotku stránky (tlačítkem výše nebo v políčku).",
+                 icon=":material/add_photo_alternate:")
     else:
         popis = text if akce == "text" else AKCE[akce][0]
-        zobrazeni = popis if novy_obrazek else popis + "  \n_(na předchozí stránce)_"
-        obrazek_pro_bublinu = novy_obrazek or (st.session_state.obrazek if len(st.session_state.zpravy) == 0 else None)
+        if st.session_state.obrazek is None:
+            zobrazeni = popis
+            obrazek_pro_bublinu = None
+        else:
+            zobrazeni = popis if novy_obrazek else popis + "  \n_(na předchozí stránce)_"
+            obrazek_pro_bublinu = novy_obrazek or (st.session_state.obrazek if len(st.session_state.zpravy) == 0 else None)
+
         st.session_state.zpravy.append({"role": "user", "text": zobrazeni, "obrazek": obrazek_pro_bublinu})
         uloz_do_historie(popis)
 
@@ -732,14 +933,15 @@ if pozadavek:
                     st.image(obrazek_pro_bublinu, width=280)
                 st.markdown(zobrazeni)
             with st.chat_message("assistant", avatar=AVATAR_AI):
-                with st.spinner("Luštím staré písmo…"):
+                hlaska_cekani = "Přemýšlím…" if st.session_state.obrazek is None else "Luštím staré písmo…"
+                with st.spinner(hlaska_cekani):
                     stazeni, nazev = None, None
                     try:
                         odpoved = zeptej_se(st.session_state.obrazek, akce, text)
                         cas = datetime.now()
                         stazeni = (f"Lupa na matriky – výsledek ({cas:%d.%m.%Y %H:%M})\n"
                                    f"Dotaz: {popis}\n{'=' * 50}\n\n{odpoved}\n")
-                        cisty = "".join(c for c in (text or akce) if c.isalnum()) or "stranka"
+                        cisty = "".join(c for c in (text or akce) if c.isalnum()) or "dotaz"
                         nazev = f"matrika_{cisty}_{cas:%Y%m%d_%H%M}.txt"
                     except Exception as e:
                         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
